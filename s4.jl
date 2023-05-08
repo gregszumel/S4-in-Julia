@@ -49,6 +49,7 @@ function (k::S4DKernel)(H, L)
     return real.(2 * return_K)
 end
 
+Flux.@functor S4DKernel
 
 """DropoutNd structures and accompanying functions"""
 
@@ -71,6 +72,8 @@ function (d::DropoutNd)(X)
     X = X .* mask .* (1.0/(1.0-d.p))
     return X
 end
+
+Flux.@functor DropoutNd
 
 
 struct S4D
@@ -112,3 +115,5 @@ function (s4d::S4D)(u)
     y = s4d.glu(s4d.conv(y), 2)
     return y
 end
+
+Flux.@functor 
