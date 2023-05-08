@@ -49,20 +49,46 @@ function (k::S4DKernel)(H, L)
     return real.(2 * return_K)
 end
 
+
+"""DropoutNd structures and accompanying functions"""
+
+struct DropoutNd
+    p::Float64
+    tie::Bool
+end
+
+# simplifying generation
+DropoutNd(x::Float64) = DropoutNd(x, true)
+# case where inactive, just return X; otherwise run through the dropout
+(d::DropoutNd)(X, active) = active && d.p != 0 ? d(X) : X
+
+"""
+L, H, B
+"""
+function (d::DropoutNd)(X)
+    mask_shape = size(X)[1:2] 
+    mask = rand(mask_shape...) .< (1.0 - d.p)
+    X = X .* mask .* (1.0/(1.0-d.p))
+    return X
+end
+
+
 struct S4D
     kernel::S4DKernel
     D::Vector{Float64}
-    dropout::Flux.Dropout
-    out::Flux.Chain
+    dropout::DropoutNd
+    conv::Flux.Conv
+    glu
 end
 
 function build_S4D(d_model::Int, d_state::Int=64, dropout::Float64=0., 
-                   transposed::Bool=true, kernel_args...)
+                   kernel_args...)
     D = rand(d_model) 
     kernel = build_S4DKernel(d_model, d_state)
-    drop = Flux.Dropout(dropout)
+    drop = DropoutNd(dropout)
     conv = Flux.Conv((1,), d_model => 2 * d_model)
-    return S4D_1(kernel, D, drop, Chain(conv, x -> glu(x, 2)))
+    glu_fn(x) = glu(x, 2)
+    return S4D(kernel, D, drop, conv, glu_fn)
 end
 
 """
@@ -74,15 +100,15 @@ function (s4d::S4D)(u)
     k = s4d.kernel(H, L)'  # (L H)
 
     @assert size(u)[1:2] == size(k)
+    @assert H % 2 == 0
 
     k_f = FFTW.rfft(cat(k, zeros(size(k)), dims=1), 1)  # (L H)
     u_f = FFTW.rfft(cat(u, zeros(size(u)), dims=1), 1)  # (L H B)
-    y = FFTW.irfft(u_f .* k_f, H, 1)[1:L, :, :]  # (L H B)
+    y = FFTW.irfft(u_f .* k_f, 2*L, 1)[1:L, :, :]  # (L H B)
 
-    y = y + reshape(s4d.D, 1, 10, 1) .* u
+    y = y + reshape(s4d.D, 1, 10, 1) .* u  # (L H B)
 
     y = s4d.dropout(Flux.gelu(y))  # TODO: replace with DropoutND
-    y = glu(conv(y), 2)
-    y = s4d.out(y)
+    y = s4d.glu(s4d.conv(y), 2)
     return y
 end
