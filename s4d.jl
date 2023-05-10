@@ -5,11 +5,11 @@ import FFTW
 import Flux
 using TensorCast
 
-
-function glu(A, dim=-1)
+function glu(A, Int::dim=-1)
     if dim < 0
         dim = ndims(A) + dim + 1
     end
+    @assert A[dim] % 2 == 2, "glu dim not even"
     halfway_thru_dim = Int(size(A)[dim]/2)
     a = selectdim(A, dim, 1:halfway_thru_dim)
     b = selectdim(A, dim, halfway_thru_dim+1:size(A)[dim])
@@ -49,7 +49,7 @@ function (k::S4DKernel)(H, L)
     return real.(2 * return_K)
 end
 
-Flux.@functor S4DKernel
+# Flux.@functor S4DKernel
 
 """DropoutNd structures and accompanying functions"""
 
@@ -73,7 +73,7 @@ function (d::DropoutNd)(X)
     return X
 end
 
-Flux.@functor DropoutNd
+# Flux.@functor DropoutNd
 
 
 struct S4D
@@ -84,7 +84,7 @@ struct S4D
     glu
 end
 
-function build_S4D(d_model::Int, d_state::Int=64, dropout::Float64=0., 
+function build_S4D(d_model::Int; d_state::Int=64, dropout::Float64=0., 
                    kernel_args...)
     D = rand(d_model) 
     kernel = build_S4DKernel(d_model, d_state)
@@ -109,11 +109,11 @@ function (s4d::S4D)(u)
     u_f = FFTW.rfft(cat(u, zeros(size(u)), dims=1), 1)  # (L H B)
     y = FFTW.irfft(u_f .* k_f, 2*L, 1)[1:L, :, :]  # (L H B)
 
-    y = y + reshape(s4d.D, 1, 10, 1) .* u  # (L H B)
+    y = y + reshape(s4d.D, 1, size(s4d.D, 1), 1) .* u  # (L H B)
 
-    y = s4d.dropout(Flux.gelu(y))  # TODO: replace with DropoutND
-    y = s4d.glu(s4d.conv(y), 2)
+    y = s4d.dropout(Flux.gelu(y))  
+    y = glu(s4d.conv(y), 2)
     return y
 end
 
-Flux.@functor 
+# Flux.@functor 
