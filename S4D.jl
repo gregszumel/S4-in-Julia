@@ -5,18 +5,14 @@ import FFTW
 import Flux
 using TensorCast
 
-function glu(A, Int::dim=-1)
-    if dim < 0
-        dim = ndims(A) + dim + 1
-    end
-    @assert A[dim] % 2 == 2, "glu dim not even"
-    halfway_thru_dim = Int(size(A)[dim]/2)
-    a = selectdim(A, dim, 1:halfway_thru_dim)
-    b = selectdim(A, dim, halfway_thru_dim+1:size(A)[dim])
-    return a .* Flux.sigmoid(b)
-end
+include("utils/GLU.jl") # glu, DropoutNd
+include("utils/DropoutNd.jl") # glu, DropoutNd
 
-
+"""
+    S4D Kernel
+    Is responsible for constructing the S4D Kernel with hidden dim
+    H and sequence length L.
+"""
 struct S4DKernel
     log_A_real::Matrix
     A_Imag::Matrix
@@ -25,8 +21,13 @@ struct S4DKernel
     log_dt::Vector{Float64}
 end
 
+"""Telling Flux what's trainable in S4DKernel"""
+Flux.trainable(s::S4DKernel) = (s.log_A_real, s.A_Imag, s.C_real, s.C_Imag, s.log_dt)
 
-function build_S4DKernel(H::Int, N=64, dt_min=0.001, dt_max=0.1, lr=0.)
+"""Constructing S4D Kernel using fixed parameters"""
+function build_S4DKernel(H::Int, N::Int=64, dt_min::Float64=0.001,
+                         dt_max::Float64=0.1, lr::Float64=0.)
+
     log_dt = rand(H) .* (log(dt_max) - log(dt_min)) .+ log(dt_min)
     C = rand(ComplexF64, H, div(N, 2))
     C_real = real(C)
@@ -36,8 +37,8 @@ function build_S4DKernel(H::Int, N=64, dt_min=0.001, dt_max=0.1, lr=0.)
     return S4DKernel(log_A_real, A_Imag, C_real, C_Imag, log_dt)
 end
 
-
-function (k::S4DKernel)(H, L)
+"""Forward function of S4DKernel; generates the Kernel of hidden dim H and length L"""
+function (k::S4DKernel)(H::Int, L::Int)
     dt = exp.(k.log_dt)
     C = k.C_real + k.C_Imag * 1im
     A = -exp.(k.log_A_real) + k.A_Imag * 1im
@@ -49,41 +50,25 @@ function (k::S4DKernel)(H, L)
     return real.(2 * return_K)
 end
 
-# Flux.@functor S4DKernel
 
-"""DropoutNd structures and accompanying functions"""
-
-struct DropoutNd
-    p::Float64
-    tie::Bool
-end
-
-# simplifying generation
-DropoutNd(x::Float64) = DropoutNd(x, true)
-# case where inactive, just return X; otherwise run through the dropout
-(d::DropoutNd)(X, active) = active && d.p != 0 ? d(X) : X
 
 """
-L, H, B
+    S4D structure and other functions
+
+    Performs the S4D operation with associated kernel, a conv using an FFT,
+    and a separate conv with a GLU activation.
 """
-function (d::DropoutNd)(X)
-    mask_shape = size(X)[1:2] 
-    mask = rand(mask_shape...) .< (1.0 - d.p)
-    X = X .* mask .* (1.0/(1.0-d.p))
-    return X
-end
-
-# Flux.@functor DropoutNd
-
-
 struct S4D
     kernel::S4DKernel
     D::Vector{Float64}
-    dropout::DropoutNd
+    dropout::DropoutNd 
     conv::Flux.Conv
-    glu
 end
 
+"""Telling Flux what's trainable in S4D"""
+Flux.trainable(s::S4D) = (s.kernel..., s.D, S.conv) 
+
+"""Builds an S4D model with size d_model (H), d_state (N)"""
 function build_S4D(d_model::Int; d_state::Int=64, dropout::Float64=0., 
                    kernel_args...)
     D = rand(d_model) 
@@ -91,15 +76,19 @@ function build_S4D(d_model::Int; d_state::Int=64, dropout::Float64=0.,
     drop = DropoutNd(dropout)
     conv = Flux.Conv((1,), d_model => 2 * d_model)
     glu_fn(x) = glu(x, 2)
-    return S4D(kernel, D, drop, conv, glu_fn)
+    return S4D(kernel, D, drop, conv)
 end
 
 """
-Input shape u: [L, H, B]
+    Forward function for S4D. 
+
+    Input u is an array of shape [L, H, B]
+    Output is an array of shape [L, H, B]
 """
-function (s4d::S4D)(u)
+function (s4d::S4D)(u::Array)
     L = size(u, 1)
     H = size(u, 2)
+    println("L: ", L, ". H: ", H, ".")
     k = s4d.kernel(H, L)'  # (L H)
 
     @assert size(u)[1:2] == size(k)
@@ -115,5 +104,3 @@ function (s4d::S4D)(u)
     y = glu(s4d.conv(y), 2)
     return y
 end
-
-# Flux.@functor 
