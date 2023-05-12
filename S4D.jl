@@ -21,11 +21,9 @@ struct S4DKernel
     log_dt::Vector{Float64}
 end
 
-"""Telling Flux what's trainable in S4DKernel"""
-Flux.trainable(s::S4DKernel) = (s.log_A_real, s.A_Imag, s.C_real, s.C_Imag, s.log_dt)
 
 """Constructing S4D Kernel using fixed parameters"""
-function build_S4DKernel(H::Int, N::Int=64, dt_min::Float64=0.001,
+function S4DKernel(H::Int, N::Int=64, dt_min::Float64=0.001,
                          dt_max::Float64=0.1, lr::Float64=0.)
 
     log_dt = rand(H) .* (log(dt_max) - log(dt_min)) .+ log(dt_min)
@@ -50,7 +48,11 @@ function (k::S4DKernel)(H::Int, L::Int)
     return real.(2 * return_K)
 end
 
+Flux.@functor S4DKernel  # what's trainable
 
+# Working example
+m = S4DKernel(10)
+Flux.setup(Flux.Adam(), m)
 
 """
     S4D structure and other functions
@@ -65,14 +67,12 @@ struct S4D
     conv::Flux.Conv
 end
 
-"""Telling Flux what's trainable in S4D"""
-Flux.trainable(s::S4D) = (s.kernel..., s.D, S.conv) 
 
 """Builds an S4D model with size d_model (H), d_state (N)"""
-function build_S4D(d_model::Int; d_state::Int=64, dropout::Float64=0., 
+function S4D(d_model::Int; d_state::Int=64, dropout::Float64=0., 
                    kernel_args...)
     D = rand(d_model) 
-    kernel = build_S4DKernel(d_model, d_state)
+    kernel = S4DKernel(d_model, d_state)
     drop = DropoutNd(dropout)
     conv = Flux.Conv((1,), d_model => 2 * d_model)
     glu_fn(x) = glu(x, 2)
@@ -104,3 +104,12 @@ function (s4d::S4D)(u::Array)
     y = glu(s4d.conv(y), 2)
     return y
 end
+
+Flux.@functor S4D
+
+"""Telling Flux what's trainable in S4D"""
+Flux.trainable(s::S4D) = (s.kernel, s.D, s.conv) 
+
+# Working example
+m = S4D(10)
+Flux.setup(Adam(), m)
