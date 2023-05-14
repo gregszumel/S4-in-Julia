@@ -108,7 +108,7 @@ end
 Flux.@functor S4D
 
 """Telling Flux what's trainable in S4D"""
-Flux.trainable(s::S4D) = (s.kernel, s.D, s.conv) 
+Flux.trainable(s::S4D) = (kernel=s.kernel, D=s.D, conv=s.conv) 
 
 # Working example
 # m = S4D(10)

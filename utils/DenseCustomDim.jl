@@ -28,7 +28,7 @@ end
 
 Flux.@functor DenseCustomDim
 
-Flux.trainable(m::DenseCustomDim) = (m.dense,)
+Flux.trainable(m::DenseCustomDim) = (dense=m.dense,)
 # d = DenseCustomDim(3=>2, 2)
 
 # Flux.setup(Adam(), d)

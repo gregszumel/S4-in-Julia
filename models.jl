@@ -42,7 +42,7 @@ end
 
 Flux.@functor S4Block
 
-Flux.trainable(m::S4Block) = (m.s4d, m.norm)
+Flux.trainable(m::S4Block) = (s4d=m.s4d, norm=m.norm)
 
 # m = S4Block(10, .1) 
 # Flux.setup(Adam(), m)
