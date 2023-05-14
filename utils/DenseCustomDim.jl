@@ -1,3 +1,4 @@
+using Flux
 """
     Dense Custom Dim(int_out::Pair, dim)
 
@@ -24,3 +25,10 @@ function (d::DenseCustomDim)(X::Array)
     unperm = vcat(collect(2:d.dim), 1, collect(d.dim+1:ndims(X)))
     return permutedims(X, unperm)
 end
+
+Flux.@functor DenseCustomDim
+
+Flux.trainable(m::DenseCustomDim) = (m.dense,)
+# d = DenseCustomDim(3=>2, 2)
+
+# Flux.setup(Adam(), d)
