@@ -4,25 +4,22 @@ using Statistics: mean
 include("utils/DenseCustomDim.jl") #DenseCustomDim
 include("S4D.jl") #S4D
 
-simple_conv = Chain(
-  Conv((5,5), 3=>16, relu),
-  MaxPool((2,2)),
-  Conv((5,5), 16=>8, relu),
-  MaxPool((2,2)),
-  x -> reshape(x, :, size(x, 4)),
-  Dense(200, 120),
-  Dense(120, 84),
-  Dense(84, 10),
-  softmax
-)
 
 
 """S4 Blocks, which are used for the S4 Model listed below"""
 struct S4Block
-    s4::S4D
+    s4d::S4D
     norm::LayerNorm
     dropout::Dropout
 end
+
+function S4Block(d_model::Int, dropout_p::Float64)
+    s4d = S4D(d_model, dropout=dropout_p)
+    norm = LayerNorm(d_model)
+    dropout = Dropout(dropout_p)
+    return S4Block(s4d, norm, dropout)
+end
+
 
 """Function for permuting dims in s4 forward block"""
 fn_permute(X::Array, f) =  permutedims(f(permutedims(X, (2,1,3))), (2,1,3))
@@ -43,6 +40,13 @@ function (block::S4Block)(x::Array, prenorm::Bool=false)
     return x
 end
 
+Flux.@functor S4Block
+
+Flux.trainable(m::S4Block) = (m.s4d, m.norm)
+
+# m = S4Block(10, .1) 
+# Flux.setup(Adam(), m)
+
 """
 S4 Model. It includes:
     encoder ->  dense layer
@@ -50,9 +54,9 @@ S4 Model. It includes:
     decoder ->  dense layer
 """
 struct S4Model
-    encoder::DenseCustomDim
+    enc::DenseCustomDim
     s4blocks::Chain  # Chain of S4Blocks
-    decoder::Dense
+    dec::Dense
 end
 
 """Init function for the s4 model"""
@@ -60,14 +64,7 @@ function S4Model(d_input::Int, d_output::Int=10, d_model::Int=256,
                  n_layers::Int=4, dropout_p::Float64=0.2, prenorm::Bool=false)
 
     # Compact function for building s4 block
-    function init_s4_block(d_model::Int, dropout_p::Float64)
-        s4d = build_S4D(d_model, dropout=dropout_p)
-        norm = LayerNorm(d_model)
-        dropout = Dropout(dropout_p)
-        return S4Block(s4d, norm, dropout)
-    end
-
-    chain = Chain([init_s4_block(d_model, dropout_p) for _ in 1:n_layers]...)
+    chain = Chain([S4Block(d_model, dropout_p) for _ in 1:n_layers]...)
     encoder = DenseCustomDim(d_input => d_model, 2)
     decoder = Dense(d_model => d_output)
     return S4Model(encoder, chain, decoder)
@@ -80,14 +77,17 @@ Input x is shape (L, d_input, B)
 """
 function (m::S4Model)(x::Array)
     println("Model input size: ", size(x))
-    x = m.encoder(x)  # (L, d_model B)
+    x = m.enc(x)  # (L, d_model B)
     println("Model post-encoder size: ", size(x))
     # x = permutedims(x, (2, 1, 3))  # (L, d_model, B)
     x = m.s4blocks(x)   # (L, d_model, B)
     x = mean(x, dims=1)[1, :, :]  # (d_model, B)
-    x = m.decoder(x)  # (d_output, B)
+    x = m.dec(x)  # (d_output, B)
     return x
 end
 
+
+Flux.@functor S4Model
+
 # m = S4Model(10)
-# m(rand(10, 8, 2))
+# Flux.setup(Adam(), m)
