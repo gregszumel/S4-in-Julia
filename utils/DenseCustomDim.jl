@@ -20,10 +20,8 @@ DenseCustomDim(in_out::Pair, dim::Int) = DenseCustomDim(Flux.Dense(in_out), dim)
 
 function (d::DenseCustomDim)(X::Array)
     perm = vcat(d.dim,  collect(1:d.dim-1), collect(d.dim+1:ndims(X)))
-    X = permutedims(X, perm)
-    X = d.dense(X)
     unperm = vcat(collect(2:d.dim), 1, collect(d.dim+1:ndims(X)))
-    return permutedims(X, unperm)
+    return permutedims(d.dense(permutedims(X, perm)), unperm)
 end
 
 Flux.@functor DenseCustomDim

@@ -13,7 +13,7 @@ struct S4Block
     dropout::Dropout
 end
 
-function S4Block(d_model::Int, dropout_p::Float64)
+function S4Block(d_model::Int, dropout_p::Float32)
     s4d = S4D(d_model, dropout=dropout_p)
     norm = LayerNorm(d_model)
     dropout = Dropout(dropout_p)
@@ -25,19 +25,18 @@ end
 fn_permute(X::Array, f) =  permutedims(f(permutedims(X, (2,1,3))), (2,1,3))
 
 """call function for S4Block"""
-function (block::S4Block)(x::Array, prenorm::Bool=false)
-    println("Block input size: ", size(x))
+function (block::S4Block)(input::Array, prenorm::Bool=false)
     # Each iteration of this loop will map (B, d_model, L) -> (B, d_model, L)
-    z = x
-    prenorm ?  z = fn_permute(z, block.norm) : nothing
-    # Apply S4 block: we ignore the state input and output
-    z = block.s4(z)
+    prenorm ?  z = fn_permute(copy(input), block.norm) : z = copy(input)
+    # Apply S4 block: we ignore the state input and output, and 
     # Dropout on the output of the S4 block
-    z = block.dropout(z)
+    layer_out = block.dropout(block.s4d(z)) .+ input
     # Residual connection
-    x = z .+ x
-    !prenorm ?  x = fn_permute(x, block.norm) : nothing
-    return x
+    if !prenorm  
+        return fn_permute(layer_out, block.norm)
+    else
+        return layer_out
+    end
 end
 
 Flux.@functor S4Block
@@ -61,7 +60,7 @@ end
 
 """Init function for the s4 model"""
 function S4Model(d_input::Int, d_output::Int=10, d_model::Int=256, 
-                 n_layers::Int=4, dropout_p::Float64=0.2, prenorm::Bool=false)
+                 n_layers::Int=4, dropout_p::Float32=0.2f0, prenorm::Bool=false)
 
     # Compact function for building s4 block
     chain = Chain([S4Block(d_model, dropout_p) for _ in 1:n_layers]...)
@@ -74,17 +73,13 @@ end
 """
 Call function for the S4 Model
 Input x is shape (L, d_input, B)
-"""
-function (m::S4Model)(x::Array)
-    println("Model input size: ", size(x))
+
     x = m.enc(x)  # (L, d_model B)
-    println("Model post-encoder size: ", size(x))
-    # x = permutedims(x, (2, 1, 3))  # (L, d_model, B)
     x = m.s4blocks(x)   # (L, d_model, B)
     x = mean(x, dims=1)[1, :, :]  # (d_model, B)
     x = m.dec(x)  # (d_output, B)
-    return x
-end
+"""
+(m::S4Model)(x::Array) = m.dec(mean(m.s4blocks(m.enc(x)), dims=1)[1, :, :])
 
 
 Flux.@functor S4Model
