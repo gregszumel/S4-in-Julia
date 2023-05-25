@@ -1,0 +1,10 @@
+python/data/.DS_Store
+python/data/cifar/cifar-10-python.tar.gz
+python/data/cifar/cifar-10-batches-py/batches.meta
+python/data/cifar/cifar-10-batches-py/data_batch_1
+python/data/cifar/cifar-10-batches-py/data_batch_2
+python/data/cifar/cifar-10-batches-py/data_batch_3
+python/data/cifar/cifar-10-batches-py/data_batch_4
+python/data/cifar/cifar-10-batches-py/data_batch_5
+python/data/cifar/cifar-10-batches-py/readme.html
+python/data/cifar/cifar-10-batches-py/test_batch
