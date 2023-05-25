@@ -89,69 +89,36 @@ def split_train_val(train, val_split):
     )
     return train, val
 
-if args.dataset == 'cifar10':
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    transforms.Lambda(lambda x: x.view(3, 1024).t())
+])
 
-    if args.grayscale:
-        transform = transforms.Compose([
-            transforms.Grayscale(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=122.6 / 255.0, std=61.0 / 255.0),
-            transforms.Lambda(lambda x: x.view(1, 1024).t())
-        ])
-    else:
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            transforms.Lambda(lambda x: x.view(3, 1024).t())
-        ])
+# S4 is trained on sequences with no data augmentation!
+transform_train = transform_test = transform
 
-    # S4 is trained on sequences with no data augmentation!
-    transform_train = transform_test = transform
+trainset = torchvision.datasets.CIFAR10(
+    root='./data/cifar/', train=True, download=True, transform=transform_train)
+trainset, _ = split_train_val(trainset, val_split=0.1)
 
-    trainset = torchvision.datasets.CIFAR10(
-        root='./data/cifar/', train=True, download=True, transform=transform_train)
-    trainset, _ = split_train_val(trainset, val_split=0.1)
+valset = torchvision.datasets.CIFAR10(
+    root='./data/cifar/', train=True, download=True, transform=transform_test)
+_, valset = split_train_val(valset, val_split=0.1)
 
-    valset = torchvision.datasets.CIFAR10(
-        root='./data/cifar/', train=True, download=True, transform=transform_test)
-    _, valset = split_train_val(valset, val_split=0.1)
+testset = torchvision.datasets.CIFAR10(
+    root='./data/cifar/', train=False, download=True, transform=transform_test)
 
-    testset = torchvision.datasets.CIFAR10(
-        root='./data/cifar/', train=False, download=True, transform=transform_test)
-
-    d_input = 3 if not args.grayscale else 1
-    d_output = 10
-
-elif args.dataset == 'mnist':
-
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Lambda(lambda x: x.view(1, 784).t())
-    ])
-    transform_train = transform_test = transform
-
-    trainset = torchvision.datasets.MNIST(
-        root='./data', train=True, download=True, transform=transform_train)
-    trainset, _ = split_train_val(trainset, val_split=0.1)
-
-    valset = torchvision.datasets.MNIST(
-        root='./data', train=True, download=True, transform=transform_test)
-    _, valset = split_train_val(valset, val_split=0.1)
-
-    testset = torchvision.datasets.MNIST(
-        root='./data', train=False, download=True, transform=transform_test)
-
-    d_input = 1
-    d_output = 10
-else: raise NotImplementedError
+d_input = 3
+d_output = 10
 
 # Dataloaders
 trainloader = torch.utils.data.DataLoader(
-    trainset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    trainset, batch_size=args.batch_size, shuffle=True)
 valloader = torch.utils.data.DataLoader(
-    valset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    valset, batch_size=args.batch_size, shuffle=False)
 testloader = torch.utils.data.DataLoader(
-    testset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    testset, batch_size=args.batch_size, shuffle=False)
 
 class S4Model(nn.Module):
 
