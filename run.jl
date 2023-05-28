@@ -5,7 +5,7 @@ using Flux: onehotbatch, onecold, crossentropy, Momentum
 using Base.Iterators: partition
 import MLUtils
 
-include("models.jl")  # S4Model
+include("julia/models.jl")  # S4Model
 
 # setting up parameters
 learning_rate = 0.1
@@ -25,12 +25,8 @@ prenorm=true
 device = "cpu";
 best_acc = 0; start_epoch = 0;
 
-model = S4Model(1024, 10, d_model)  # d_model = 1024, d_state = 64
-# model = Chain(
-#     S4D(1024),  # L, H, B -> L, H, B
-#     Flux.flatten,
-#     Flux.Dense(3*1024, 10)
-# )
+model = S4Model(3, 10, d_model, n_layers, 0.1f0, true)  # d_model = 1024, d_state = 64
+copied_model = deepcopy(model)
 
 train = CIFAR10(split=:train)[:]
 test = CIFAR10(split=:test)[:]
@@ -50,7 +46,7 @@ epochs = 10
 function test_forward()
     for (input, label) in train_dataloader
         print(input |> size, label |>size)
-        global output = model(reshape(input, (3, 1024, batch_size)))
+        global output = model(reshape(input, (1024, 3, batch_size)))
         global i = input
         global l = label
         break
@@ -61,7 +57,7 @@ end
 function test_forward_backward()
     for (input, label) in train_dataloader
         gs = Flux.gradient(model) do m
-            output = m(reshape(input, (3, 1024, batch_size)))
+            output = m(reshape(input, (1024, 3, batch_size)))
             l = loss(Flux.softmax(output), onehotbatch(label, 0:9))
             println(l)
             global outputs = output
@@ -78,29 +74,36 @@ function test_convergence()
     end
 end
 
-output
-loss(Flux.softmax(output), onehotbatch(label, 0:9))
-sum(onecold(Flux.softmax(output)) .- 1 .== label)
-output[:, 1]
-label[1]
-
 
 for _ in 1:epochs
     for (input, label) in train_dataloader
         gs = Flux.gradient(model) do m
-            output = Flux.softmax(m(reshape(input, (3, 1024, batch_size))))
+            output = Flux.softmax(m(reshape(input, (1024, 3, batch_size))))
             l = loss(output, onehotbatch(label, 0:9))
             l
         end
         Flux.update!(opt_state, model, gs[1])
+        break
     end
     correct = 0
     total = 0
     for (input, label) in val_dataloader
-        output = model(reshape(input, (3, 1024, batch_size)))
+        output = model(reshape(input, (1024, 3, batch_size)))
         correct += sum(onecold(Flux.softmax(output)) .- 1 .== label)
         total += 32
+        break
     end
     println(correct / total)
 end
- # 0.5 accuracy
+
+model.enc.dense.weight
+copied_model.enc.dense.weight
+
+model.s4blocks[3]
+copied_model.s4blocks[3]
+
+model.dec.weight
+copied_model.dec.weight
+
+println(model)
+println(copied_model)
