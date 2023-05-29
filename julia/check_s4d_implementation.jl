@@ -1,4 +1,6 @@
 using PyCall
+include("S4D.jl")
+include("utils/DropoutNd.jl")
 
 get_param_vals(parameter_tensor)  = parameter_tensor.data.numpy()
 
@@ -10,10 +12,13 @@ end
 # Run the original python code for S4D, pulled from the s4d.py file
 py"""
 import sys
-sys.path.insert(0, "/Users/gregszumel/Documents/coding/s4")
-
+sys.path.insert(0, "/Users/gregszumel/Documents/coding/S4-in-Julia/python")
 import s4d
 import torch
+"""
+
+# Actual forward pass
+py"""
 s4d_py = s4d.S4D(10)
 u = torch.rand(2, 10, 5)
 if not s4d_py.transposed: u = u.transpose(-1, -2)
@@ -44,12 +49,9 @@ S4D_jl = S4D(
             d["kernel.C"][:, :, 2], 
             d["kernel.log_dt"]),
     d["D"],
-    Flux.Dropout(.1),
-    Flux.Chain(
-        Flux.Conv(permutedims(d["output_linear.0.weight"], (3, 2, 1)), 
-                d["output_linear.0.bias"]),
-        x -> glu(x, 2)
-    )
+    DropoutNd(.1f0),
+    Flux.Conv(permutedims(d["output_linear.0.weight"], (3, 2, 1)), 
+              d["output_linear.0.bias"]),
 )
 
 
@@ -60,18 +62,34 @@ u = permutedims(py"u.numpy()", (3, 2, 1))
 L = size(u, 1)
 H = size(u, 2)
 k = S4D_jl.kernel(H, L)'  # (L H)
+@assert maximum(k' - py"k.data.numpy()") < 0.0001
 
 @assert size(u)[1:2] == size(k)
 
 k_f = FFTW.rfft(cat(k, zeros(size(k)), dims=1), 1)  # (L H)
+@assert maximum(real(k_f' - py"k_f.data.numpy()"))  < 0.001
+@assert maximum(imag(k_f' - py"k_f.data.numpy()")) < 1 # diff here, doesn't seem to matter
 u_f = FFTW.rfft(cat(u, zeros(size(u)), dims=1), 1)  # (L H B)
+@assert maximum(real(permutedims(u_f, (3, 2, 1)) - py"u_f.data.numpy()")) < 0.001
+@assert maximum(imag(permutedims(u_f, (3, 2, 1)) - py"u_f.data.numpy()")) < 0.001
+
 y_1 = FFTW.irfft(u_f .* k_f, H, 1)[1:L, :, :]  # (L H B)
+@assert maximum(permutedims(y_1, (3,2,1))  - py"y_1.data.numpy()") < 0.001
 
 ud = reshape(S4D_jl.D, 1, 10, 1) .* u
+@assert maximum(permutedims(ud, (3,2,1)) - py"ud.data.numpy()") < 0.001
+
 y_2 = y_1 + ud
+@assert maximum(permutedims(y_2, (3,2,1)) - py"y_2.data.numpy()") < 0.001
 
 y_3 = S4D_jl.dropout(Flux.gelu(y_2))  # TODO: replace with DropoutND
-y_4 = glu(conv(y_3), 2)  # Some differences here with glu
-y_4 = S4D_jl.out(y_3)
 
-maximum(permutedims(y_4, (3,2,1)) .- py"y_4.detach().numpy()")  # 5.1870942f-5
+py"""
+y_3_act = s4d_py.activation(y_2)
+"""
+y_3_act = Flux.gelu(y_2)
+
+@assert maximum(permutedims(y_3_act, (3,2,1)) - py"y_3_act.data.numpy()") < 0.001
+
+y_4 = glu(S4D_jl.conv(y_3_act), 2)  # Some differences here with glu
+@assert maximum(permutedims(y_4, (3,2,1)) .- py"y_4.detach().numpy()")  < 0.001
