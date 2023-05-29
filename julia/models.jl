@@ -43,8 +43,6 @@ Flux.@functor S4Block
 
 Flux.trainable(m::S4Block) = (s4d=m.s4d, norm=m.norm)
 
-# m = S4Block(10, .1) 
-# Flux.setup(Adam(), m)
 
 """
 S4 Model. It includes:
@@ -83,6 +81,3 @@ Input x is shape (L, d_input, B)
 
 
 Flux.@functor S4Model
-
-# m = S4Model(10)
-# Flux.setup(Adam(), m)

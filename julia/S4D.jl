@@ -48,9 +48,6 @@ end
 
 Flux.@functor S4DKernel  # what's trainable
 
-# Working example
-# m = S4DKernel(10)
-# Flux.setup(Flux.Adam(), m)
 
 """
     S4D structure and other functions
@@ -105,7 +102,3 @@ Flux.@functor S4D
 
 """Telling Flux what's trainable in S4D"""
 Flux.trainable(s::S4D) = (kernel=s.kernel, D=s.D, conv=s.conv) 
-
-# Working example
-# m = S4D(10)
-# Flux.setup(Adam(), m)

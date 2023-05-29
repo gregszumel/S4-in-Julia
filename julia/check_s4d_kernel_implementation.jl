@@ -1,8 +1,9 @@
 using PyCall
+include("S4D.jl")
 
 py"""
 import sys
-sys.path.insert(0, "/Users/gregszumel/Documents/coding/s4")
+sys.path.insert(0, "/Users/gregszumel/Documents/coding/S4-in-Julia/python")
 """
 
 s4d_py = pyimport("s4d")
@@ -21,7 +22,9 @@ function test_s4d_jl_implementation()
     s4dk_jl = S4DKernel(log_A_real, A_imag, C[:, :, 1], C[:, :, 2], log_dt)
     jl = s4dk_jl(10, 20)  # runs julia kernel 
     np = s4dk(20).detach().numpy()  # runs np kernel
-    @assert maximum(jl - np) < 0.001
+    max = maximum(jl - np)
+    println(max)
+    @assert  max < 0.001
 end
 
 function get_s4d_params(m)
@@ -30,3 +33,4 @@ function get_s4d_params(m)
 end
 
 
+test_s4d_jl_implementation()
